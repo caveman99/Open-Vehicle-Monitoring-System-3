@@ -6,8 +6,10 @@ name: Build OVMS V3 firmware
 #   - vehicle/OVMS.V3/support/sdkconfig.default.hw31 as the v3.3 hardware config
 #   - legacy GNU make build
 #
-# Run via the Actions tab > "Build OVMS V3 firmware" > "Run workflow",
-# select the branch from the dropdown, optionally override the ESP-IDF ref.
+# Run via the Actions tab > "Build OVMS V3 firmware" > "Run workflow".
+# Builds the branch selected in the dropdown, or the branch/tag/SHA given in
+# the "branch" input (that ref does not need to contain this workflow).
+# Optionally override the ESP-IDF ref.
 #
 # Note on runtime: we deliberately do NOT use the espressif/idf:release-v3.3
 # container. That image is Ubuntu 18.04 / glibc 2.27, and current GitHub
@@ -17,12 +19,17 @@ name: Build OVMS V3 firmware
 on:
   workflow_dispatch:
     inputs:
+      branch:
+        description: "OVMS branch / tag / SHA to build. Empty = the branch selected above."
+        required: false
+        default: ""
       esp_idf_ref:
         description: "openvehicles/esp-idf ref (branch / tag / full SHA). Default = production HEAD (v3.3.4-854-g9063c8662)."
         required: false
         default: "9063c8662ca5d67b5490c1503bd4377b380feed3"
 
 env:
+  BUILD_REF: ${{ inputs.branch || github.ref_name }}
   OVMS_ESP_IDF_REPO: https://github.com/openvehicles/esp-idf.git
   # xtensa-esp32-elf gcc 5.2.0 (crosstool-ng-1.22.0-97-gc752ad5) — the
   # exact toolchain pinned by tools/toolchain_versions.mk in the
@@ -43,6 +50,7 @@ jobs:
       - name: Checkout OVMS (with submodules)
         uses: actions/checkout@v6
         with:
+          ref: ${{ env.BUILD_REF }}
           submodules: recursive
           fetch-depth: 0
 
@@ -113,8 +121,9 @@ jobs:
         run: |
           set -eu
           mkdir -p build
+          echo "ARTIFACT_NAME=ovms3-${BUILD_REF//\//-}-${{ github.run_number }}" >> "$GITHUB_ENV"
           {
-            echo "ovms_branch=${{ github.ref_name }}"
+            echo "ovms_branch=$BUILD_REF"
             echo "ovms_sha=$(git rev-parse HEAD)"
             echo "ovms_describe=$(git describe --always --tags --dirty 2>/dev/null || git rev-parse --short HEAD)"
             echo "esp_idf_repo=$OVMS_ESP_IDF_REPO"
@@ -128,7 +137,7 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v7
         with:
-          name: ovms3-${{ github.ref_name }}-${{ github.run_number }}
+          name: ${{ env.ARTIFACT_NAME }}
           if-no-files-found: error
           path: |
             vehicle/OVMS.V3/build/ovms3.bin
